@@ -1,0 +1,26 @@
+# MVP Signaling Server Requirements
+# FastAPI WebSocket signaling server for WebRTC peer-to-peer connections
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# WebSocket support
+websockets>=11.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# CORS support (included in FastAPI)
+# No additional CORS dependencies needed
+
+# Optional: Enhanced logging
+structlog>=23.0.0
+
+# Optional: Environment configuration
+python-dotenv>=1.0.0
+
+# Optional: Health checks and monitoring
+psutil>=5.9.0
+
+
