@@ -61,8 +61,8 @@ async def broadcast_to_org(org_id: int, message: dict, exclude_ws: WebSocket = N
                     log_error(f"Error broadcasting to connection: {e}")
 
 
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@router.websocket("/ws/")
+async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
     """WebSocket endpoint for signaling"""
     await websocket.accept()
 
