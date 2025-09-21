@@ -62,7 +62,7 @@ async def broadcast_to_org(org_id: int, message: dict, exclude_ws: WebSocket = N
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
+async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for signaling"""
     await websocket.accept()
 
