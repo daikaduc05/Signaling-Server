@@ -62,13 +62,24 @@ async def broadcast_to_org(org_id: int, message: dict, exclude_ws: WebSocket = N
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket, token: str = None, db: Session = Depends(get_db)
-):
+async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
     """WebSocket endpoint for signaling"""
     await websocket.accept()
 
     try:
+        # Get token from query parameters or headers
+        token = None
+
+        # Try to get token from query parameters
+        if websocket.query_params.get("token"):
+            token = websocket.query_params.get("token")
+
+        # Try to get token from headers (Authorization: Bearer <token>)
+        if not token:
+            auth_header = websocket.headers.get("authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+
         # Authenticate user
         if not token:
             await websocket.close(code=4001, reason="No token provided")

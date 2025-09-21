@@ -143,6 +143,8 @@ curl -X POST "http://localhost:8000/organizations/1/allocate_ip" \
 
 ### 4. WebSocket Connection
 
+**Method 1: Using query parameter**
+
 ```javascript
 const ws = new WebSocket("ws://localhost:8000/ws?token=<your-jwt-token>");
 
@@ -163,6 +165,46 @@ ws.onmessage = function (event) {
   const data = JSON.parse(event.data);
   console.log("Received:", data);
 };
+```
+
+**Method 2: Using Authorization header (if supported by your WebSocket client)**
+
+```javascript
+// Note: Not all WebSocket clients support custom headers
+const ws = new WebSocket("ws://localhost:8000/ws", {
+  headers: {
+    Authorization: "Bearer <your-jwt-token>",
+  },
+});
+```
+
+**Method 3: Using Python websockets library**
+
+```python
+import asyncio
+import websockets
+import json
+
+async def connect_websocket():
+    uri = "ws://localhost:8000/ws?token=<your-jwt-token>"
+    async with websockets.connect(uri) as websocket:
+        # Register agent
+        register_message = {
+            "type": "register",
+            "agent_id": "agent-123",
+            "public_ip": "1.2.3.4",
+            "public_port": 50000,
+            "org_id": 1
+        }
+        await websocket.send(json.dumps(register_message))
+
+        # Listen for messages
+        async for message in websocket:
+            data = json.loads(message)
+            print("Received:", data)
+
+# Run the connection
+asyncio.run(connect_websocket())
 ```
 
 ## Testing

@@ -92,6 +92,43 @@ def test_api():
     except Exception as e:
         print(f"Error: {e}")
 
+    # Test 8: WebSocket connection (basic test)
+    print("\n8. Testing WebSocket connection...")
+    try:
+        import websockets
+        import asyncio
+
+        async def test_websocket():
+            uri = f"ws://localhost:8000/ws?token={token}"
+            try:
+                async with websockets.connect(uri) as websocket:
+                    print("WebSocket connected successfully")
+
+                    # Send register message
+                    register_msg = {
+                        "type": "register",
+                        "agent_id": "test-agent-123",
+                        "public_ip": "127.0.0.1",
+                        "public_port": 8080,
+                        "org_id": org_id,
+                    }
+                    await websocket.send(json.dumps(register_msg))
+
+                    # Wait for response
+                    response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                    print(f"WebSocket response: {response}")
+
+            except Exception as e:
+                print(f"WebSocket error: {e}")
+
+        # Run WebSocket test
+        asyncio.run(test_websocket())
+
+    except ImportError:
+        print("WebSocket test skipped (websockets library not installed)")
+    except Exception as e:
+        print(f"WebSocket test error: {e}")
+
     print("\nAPI testing completed!")
 
 
