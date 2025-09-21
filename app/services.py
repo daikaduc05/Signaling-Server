@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from ..models import User, Organization, VirtualIPMapping
-from ..utils import get_next_available_ip, log_info, log_error
+from .models import User, Organization, VirtualIPMapping
+from .utils import get_next_available_ip, log_info, log_error
 from typing import List, Optional
 
 

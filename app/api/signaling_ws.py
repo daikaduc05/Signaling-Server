@@ -18,7 +18,8 @@ from ..schemas import (
     PeerOnlineNotification,
     PeerInfo,
 )
-from ..utils import verify_token, get_user_virtual_ip, log_info, log_error
+from ..utils import verify_token, log_info, log_error
+from ..services import get_user_virtual_ip
 from fastapi.security import HTTPBearer
 
 router = APIRouter()
