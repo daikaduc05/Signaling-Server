@@ -130,51 +130,33 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
 async def handle_register(websocket: WebSocket, message: dict, user: User, db: Session):
     """Handle agent registration"""
     try:
-        log_info(f"Starting registration process for user {user.email} (ID: {user.id})")
-        
         # Validate message
         org_id = message.get("org_id")
         agent_id = message.get("agent_id")
         public_ip = message.get("public_ip")
         public_port = message.get("public_port")
 
-        log_info(f"Registration request - org_id: {org_id}, agent_id: {agent_id}, public_ip: {public_ip}, public_port: {public_port}")
-
         if not all([org_id, agent_id, public_ip, public_port]):
-            log_error(f"Registration failed for user {user.email}: Missing required fields")
             await websocket.send_text(json.dumps({"error": "Missing required fields"}))
             return
 
         # Check if user is member of organization
         org = db.query(Organization).filter(Organization.id == org_id).first()
-        if not org:
-            log_error(f"Registration failed for user {user.email}: Organization {org_id} not found")
-            await websocket.send_text(
-                json.dumps({"error": "Organization not found"})
-            )
-            return
-            
-        if user not in org.users:
-            log_error(f"Registration failed for user {user.email}: User not member of organization {org_id}")
+        if not org or user not in org.users:
             await websocket.send_text(
                 json.dumps({"error": "User not member of organization"})
             )
             return
 
-        log_info(f"User {user.email} verified as member of organization {org.name} (ID: {org_id})")
-
         # Get user's virtual IP
         virtual_ip = get_user_virtual_ip(db, user.id, org_id)
         if not virtual_ip:
-            log_error(f"Registration failed for user {user.email}: No virtual IP allocated for organization {org_id}")
             await websocket.send_text(
                 json.dumps(
                     {"error": "No virtual IP allocated for user in this organization"}
                 )
             )
             return
-
-        log_info(f"Virtual IP {virtual_ip} assigned to user {user.email} in organization {org_id}")
 
         # Store agent info
         agent_data = {
@@ -192,8 +174,6 @@ async def handle_register(websocket: WebSocket, message: dict, user: User, db: S
         if org_id not in active_connections:
             active_connections[org_id] = []
         active_connections[org_id].append(websocket)
-        
-        log_info(f"Agent {agent_id} added to active connections for organization {org_id}")
 
         # Get other peers in the organization
         peers = []
@@ -211,13 +191,9 @@ async def handle_register(websocket: WebSocket, message: dict, user: User, db: S
                     )
                 )
 
-        log_info(f"Found {len(peers)} existing peers for user {user.email} in organization {org_id}")
-
         # Send registration response
         response = RegisterAgentResponse(status="registered", peers=peers)
         await websocket.send_text(json.dumps(response.dict()))
-
-        log_info(f"Registration response sent to user {user.email} with {len(peers)} peers")
 
         # Notify other peers about new agent
         if peers:  # Only broadcast if there are other peers
@@ -230,12 +206,11 @@ async def handle_register(websocket: WebSocket, message: dict, user: User, db: S
                 virtual_ip=virtual_ip,
             )
             await broadcast_to_org(org_id, notification.dict(), exclude_ws=websocket)
-            log_info(f"Peer online notification broadcasted to {len(peers)} peers in organization {org_id}")
 
-        log_info(f"Agent {agent_id} successfully registered for user {user.email} in org {org_id} with virtual IP {virtual_ip}")
+        log_info(f"Agent {agent_id} registered for user {user.email} in org {org_id}")
 
     except Exception as e:
-        log_error(f"Error in handle_register for user {user.email}: {e}")
+        log_error(f"Error in handle_register: {e}")
         await websocket.send_text(json.dumps({"error": "Registration failed"}))
 
 
