@@ -59,7 +59,7 @@ def send_otp_email(to_email: str, otp_code: str) -> bool:
         Nếu bạn không yêu cầu đăng ký, vui lòng bỏ qua email này.
         
         Trân trọng,
-        Signaling Server
+        tamthaitu.io
         """
         
         msg.attach(MIMEText(body, 'plain', 'utf-8'))

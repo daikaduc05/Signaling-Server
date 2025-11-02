@@ -16,6 +16,7 @@ from ..models import User, Organization
 from ..schemas import (
     RegisterAgentResponse,
     PeerOnlineNotification,
+    PeerOfflineNotification,
     PeerInfo,
 )
 from ..utils import verify_token, log_info, log_error, is_same_subnet
@@ -289,6 +290,21 @@ async def handle_disconnect(websocket: WebSocket, user: User):
         if websocket in agent_info:
             agent_data = agent_info[websocket]
             org_id = agent_data["org_id"]
+            subnet = agent_data.get("subnet")
+            virtual_ip = agent_data.get("virtual_ip")
+
+            # Create PeerInfo for offline notification (before removing from agent_info)
+            peer_info = PeerInfo(
+                peer_id=agent_data.get("peer_id", agent_data.get("agent_id", "unknown")),
+                user_id=agent_data["user_id"],
+                email=agent_data["email"],
+                agent_id=agent_data.get("agent_id"),
+                public_ip=agent_data["public_ip"],
+                public_port=agent_data["public_port"],
+                relay_ip=agent_data.get("relay_ip"),
+                relay_port=agent_data.get("relay_port"),
+                virtual_ip=agent_data["virtual_ip"],
+            )
 
             # Remove from active connections
             if org_id in active_connections:
@@ -297,10 +313,17 @@ async def handle_disconnect(websocket: WebSocket, user: User):
                 if not active_connections[org_id]:
                     del active_connections[org_id]
 
-            # Remove agent info
+            # Remove agent info (must be done after creating PeerInfo)
             del agent_info[websocket]
 
-            log_info(f"Agent disconnected for user {user.email} in org {org_id}")
+            # Notify other peers about peer going offline (only same subnet)
+            notification = PeerOfflineNotification(peer=peer_info)
+            sent_count = await broadcast_to_org(
+                org_id, notification.dict(), exclude_ws=websocket, subnet=subnet, virtual_ip=virtual_ip
+            )
+            log_info(f"Peer offline notification broadcasted to {sent_count} peers in same subnet for organization {org_id}")
+            log_info(f"Agent disconnected for user {user.email} (peer_id: {peer_info.peer_id}) in org {org_id}")
 
     except Exception as e:
         log_error(f"Error in handle_disconnect: {e}")
+        log_error(traceback.format_exc())

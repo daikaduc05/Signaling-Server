@@ -132,5 +132,11 @@ class PeerOnlineNotification(BaseModel):
     peer: "PeerInfo"
 
 
+class PeerOfflineNotification(BaseModel):
+    type: str = "peer_offline"
+    peer: "PeerInfo"
+
+
 # Fix forward reference
 PeerOnlineNotification.model_rebuild()
+PeerOfflineNotification.model_rebuild()
