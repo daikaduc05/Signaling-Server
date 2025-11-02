@@ -16,7 +16,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
-    """Get current authenticated user"""
+    #"""get current user from token"""
     token = credentials.credentials
     payload = verify_token(token)
     user_id = int(payload.get("sub"))
@@ -35,7 +35,7 @@ def allocate_ip(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Allocate virtual IP for a user in an organization"""
+  #  """Allocate virtual IP for a user in an organization"""
     # Check if organization exists
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:

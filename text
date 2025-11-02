@@ -1,0 +1,128 @@
+### 6. Kết Nối WebSocket và Đăng Ký với Signaling Server
+
+Quá trình kết nối và đăng ký với signaling server qua WebSocket để trao đổi thông tin giữa các peer.
+
+*Lưu ý*: Peer sẽ lưu thông tin của các peer cùng subnet mask trong bộ nhớ tạm để sử dụng sau này.
+
+#### 6.1. Peer → WebSocket Connect (/ws/) với JWT Token
+
+- Client mở kết nối WebSocket đến signaling server tại endpoint /ws/
+- Gửi JWT token trong query parameter hoặc header:
+  - URL: ws://signaling-server/ws?token=<JWT_TOKEN>
+  - Hoặc trong Authorization header
+- Client thiết lập WebSocket connection với timeout và keep-alive
+
+#### 6.2. Server → Verify Token, Authenticate User
+
+- Server nhận connection request từ peer
+- Verify JWT token:
+  - Kiểm tra signature và expiration
+  - Extract user ID và claims từ token
+  - Validate user permissions
+- Nếu token hợp lệ → accept connection
+- Nếu token không hợp lệ → reject connection (HTTP 401/403)
+
+#### 6.3. Peer → Send Register Message
+
+- Sau khi WebSocket connection established, peer gửi registration message:
+
+{
+  "type": "register",
+  "agent_id": "<optional_agent_id>",
+  "public_ip": "<public_ip_from_stun>",
+  "relay_ip": "<relay_ip_from_turn>"
+}
+
+- Message chứa thông tin:
+  - Agent ID (nếu có)
+  - Public IP và port từ STUN
+  - Relay IP và port từ TURN
+  - *Không cần ICE candidates* vì không sử dụng ICE agent, tự custom logic kết nối
+
+#### 6.4. Server → Validate, Get Virtual IP, Store Agent Info
+
+- Server validate registration message
+- Server assign virtual IP cho peer (nếu cần thiết)
+- Xác định subnet mask của virtual IP được assign
+- Lưu thông tin agent vào connection pool:
+  - Connection ID
+  - User ID (từ token)
+  - Virtual IP
+  - Subnet mask (để filter peers cùng subnet)
+  - Public IP và port
+  - Relay IP và port
+  - Connection timestamp
+  - *Không lưu ICE candidates* vì không sử dụng ICE agent
+- Store mapping: connection → agent info
+
+#### 6.5. Server → Send RegisterAgentResponse
+
+- Server gửi response xác nhận registration thành công:
+
+{
+  "type": "register_agent_response",
+  "virtual_ip": "<assigned_virtual_ip>",
+  "connection_id": "<connection_id>",
+  "existing_peers": [
+    {
+      "peer_id": "...",
+      "virtual_ip": "...",
+      "public_ip": "...",
+      "relay_ip": "..."
+    }
+  ]
+}
+
+- Response bao gồm:
+  - Virtual IP được assign
+  - Connection ID
+  - *Danh sách các peers hiện đang online có cùng subnet mask với virtual IP của peer mới*:
+    - Server filter peers từ connection pool
+    - Chỉ include peers có virtual IP cùng subnet với virtual IP được assign
+    - Peers khác subnet không được include trong danh sách
+- *Peer lưu thông tin các peers cùng subnet vào bộ nhớ tạm*:
+  - Lưu thông tin: peer_id, virtual_ip, public_ip, relay_ip
+  - Sử dụng để quyết định phương thức kết nối sau này
+
+#### 6.6. Server → Broadcast PeerOnlineNotification
+
+- Server broadcast notification đến *chỉ các peers có cùng subnet mask* với peer mới:
+
+{
+  "type": "peer_online",
+  "peer": {
+    "peer_id": "<new_peer_id>",
+    "virtual_ip": "<virtual_ip>",
+    "public_ip": "<public_ip>",
+    "relay_ip": "<relay_ip>"
+  }
+}
+
+- *Lọc peers nhận notification*:
+  - Server chỉ gửi notification đến peers có virtual IP cùng subnet với peer mới
+  - Peers khác subnet không nhận được notification
+  - Sử dụng subnet mask để xác định peers cùng subnet
+- Mỗi peer online cùng subnet nhận được notification về peer mới
+- *Peer lưu thông tin peer mới vào bộ nhớ tạm* (cùng subnet)
+- Peer có thể sử dụng thông tin này để initiate P2P connection
+
+#### 6.7. Connection → Keep Alive, Handle Messages
+
+- WebSocket connection được maintain với keep-alive:
+  - Ping/Pong messages mỗi 25-30 giây
+  - Read deadline timeout (3 phút)
+  - Auto-reconnect nếu connection bị drop
+- Server và client xử lý các message types:
+  - register / register_agent_response
+  - peer_online / peer_offline
+  - connection_request (yêu cầu kết nối P2P)
+  - connection_response (phản hồi kết nối P2P)
+  - error / notification
+
+#### 6.8. On Disconnect → Remove from Connections
+
+- Khi peer disconnect (mất kết nối, close connection):
+  - Server remove connection khỏi connection pool
+  - Cleanup agent info và virtual IP mapping
+  - *Note*: Chưa notify các peers khác về việc peer này offline (có thể implement sau)
+  - Connection resources được release

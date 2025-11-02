@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -19,12 +20,24 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)
+    email_verified = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     virtual_ips = relationship("VirtualIPMapping", back_populates="user")
     organizations = relationship(
         "Organization", secondary=organization_user, back_populates="users"
     )
+
+
+class OTPVerification(Base):
+    __tablename__ = "otp_verification"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    otp_code = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    verified = Column(Boolean, default=False, nullable=False)
 
 
 class Organization(Base):

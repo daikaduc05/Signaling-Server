@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    email_verified: bool = False
 
     class Config:
         from_attributes = True
@@ -24,6 +25,27 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+# OTP schemas
+class RequestOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class RequestOTPResponse(BaseModel):
+    message: str
+    expires_in: int  # seconds
+
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+    password: str
+
+
+class VerifyOTPResponse(BaseModel):
+    message: str
+    user: UserResponse
 
 
 # Organization schemas

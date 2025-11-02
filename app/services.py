@@ -5,7 +5,7 @@ from typing import List, Optional
 
 
 def allocate_virtual_ip(db: Session, org_id: int, user_id: int) -> Optional[str]:
-    """Allocate a virtual IP for a user in an organization"""
+    #"""Allocate a virtual IP for a user in an organization"""
     # Get organization
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:

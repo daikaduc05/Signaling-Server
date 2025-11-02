@@ -20,7 +20,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
-    """Get current authenticated user"""
+# """get current user from token"""    
     token = credentials.credentials
     payload = verify_token(token)
     user_id = int(payload.get("sub"))
