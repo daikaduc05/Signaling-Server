@@ -11,6 +11,9 @@ from typing import Dict, List
 import json
 import traceback
 import uuid
+import asyncio
+import time
+from datetime import datetime, timedelta
 from ..db import get_db
 from ..models import User, Organization
 from ..schemas import (
@@ -18,6 +21,8 @@ from ..schemas import (
     PeerOnlineNotification,
     PeerOfflineNotification,
     PeerInfo,
+    PingMessage,
+    PongMessage,
 )
 from ..utils import verify_token, log_info, log_error, is_same_subnet
 from ..services import get_user_virtual_ip
@@ -28,6 +33,12 @@ router = APIRouter()
 active_connections: Dict[int, List[WebSocket]] = {}
 # Store agent info by connection
 agent_info: Dict[WebSocket, dict] = {}
+# Store last pong time for each connection (for heartbeat)
+last_pong_time: Dict[WebSocket, float] = {}
+
+# Heartbeat configuration
+PING_INTERVAL = 30  # Send ping every 30 seconds
+PONG_TIMEOUT = 60  # Consider dead if no pong for 60 seconds
 
 
 def get_user_from_token(token: str, db: Session) -> User:
@@ -122,18 +133,50 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
                 log_error(f"Error processing message: {e}")
                 await websocket.send_text(json.dumps({"error": "Processing error"}))
 
-        # Keep connection alive and handle other messages
-        while True:
+        # Initialize heartbeat for this connection (after registration)
+        if websocket in agent_info:
+            # Start ping task and timeout checker
+            # Note: last_pong_time will be set when first ping is sent or first pong is received
+            ping_task = asyncio.create_task(send_ping_periodically(websocket))
+            timeout_task = asyncio.create_task(check_timeout_and_disconnect(websocket, user, db))
+            
             try:
-                data = await websocket.receive_text()
-                message = json.loads(data)
-
-            except WebSocketDisconnect:
-                await handle_disconnect(websocket, user)
-                break
-            except Exception as e:
-                log_error(f"WebSocket error: {e}")
-                break
+                # Keep connection alive and handle other messages
+                while True:
+                    try:
+                        data = await websocket.receive_text()
+                        message = json.loads(data)
+                        
+                        # Handle pong message
+                        if message.get("type") == "pong":
+                            current_time = time.time()
+                            # Update last pong time (create entry if not exists)
+                            last_pong_time[websocket] = current_time
+                            peer_id = agent_info.get(websocket, {}).get('peer_id', 'unknown')
+                            log_info(f"Received pong from user {user.email} (peer_id: {peer_id})")
+                            continue
+                        
+                        # Handle other messages here if needed
+                        # For now, just acknowledge receipt
+                        
+                    except WebSocketDisconnect:
+                        await handle_disconnect(websocket, user)
+                        break
+                    except Exception as e:
+                        log_error(f"WebSocket error: {e}")
+                        break
+            finally:
+                # Cancel tasks on disconnect
+                ping_task.cancel()
+                timeout_task.cancel()
+                try:
+                    await ping_task
+                except asyncio.CancelledError:
+                    pass
+                try:
+                    await timeout_task
+                except asyncio.CancelledError:
+                    pass
 
     except Exception as e:
         log_error(f"WebSocket connection error: {e}")
@@ -315,6 +358,10 @@ async def handle_disconnect(websocket: WebSocket, user: User):
 
             # Remove agent info (must be done after creating PeerInfo)
             del agent_info[websocket]
+            
+            # Clean up heartbeat tracking
+            if websocket in last_pong_time:
+                del last_pong_time[websocket]
 
             # Notify other peers about peer going offline (only same subnet)
             notification = PeerOfflineNotification(peer=peer_info)
@@ -327,3 +374,71 @@ async def handle_disconnect(websocket: WebSocket, user: User):
     except Exception as e:
         log_error(f"Error in handle_disconnect: {e}")
         log_error(traceback.format_exc())
+
+
+async def send_ping_periodically(websocket: WebSocket):
+    """Send ping message periodically to check connection health"""
+    try:
+        while True:
+            await asyncio.sleep(PING_INTERVAL)
+            
+            # Check if websocket is still active
+            if websocket not in agent_info:
+                break
+                
+            try:
+                # Send ping message
+                ping_message = PingMessage(timestamp=time.time())
+                await websocket.send_text(json.dumps(ping_message.dict()))
+                
+                # Initialize last_pong_time on first ping if not already set
+                if websocket not in last_pong_time:
+                    last_pong_time[websocket] = time.time()
+                
+                log_info(f"Sent ping to connection (peer_id: {agent_info.get(websocket, {}).get('peer_id', 'unknown')})")
+            except Exception as e:
+                # Connection is likely dead, break loop
+                log_error(f"Error sending ping: {e}")
+                break
+                
+    except asyncio.CancelledError:
+        log_info("Ping task cancelled")
+    except Exception as e:
+        log_error(f"Error in send_ping_periodically: {e}")
+
+
+async def check_timeout_and_disconnect(websocket: WebSocket, user: User, db: Session):
+    """Check if connection is dead (no pong received for PONG_TIMEOUT seconds)"""
+    try:
+        while True:
+            await asyncio.sleep(10)  # Check every 10 seconds
+            
+            # Check if websocket is still active
+            if websocket not in agent_info:
+                break
+                
+            current_time = time.time()
+            last_pong = last_pong_time.get(websocket)
+            
+            if last_pong is None:
+                # No pong tracking yet - connection just registered and no ping sent yet
+                # Give it time until first ping is sent
+                continue
+                
+            time_since_last_pong = current_time - last_pong
+            
+            # Check if no pong received for more than PONG_TIMEOUT seconds
+            if time_since_last_pong > PONG_TIMEOUT:
+                # Connection is dead, disconnect
+                log_error(f"Connection timeout for user {user.email}: No pong received for {time_since_last_pong:.1f} seconds")
+                try:
+                    await handle_disconnect(websocket, user)
+                    await websocket.close(code=1000, reason="Connection timeout - no pong received")
+                except Exception as e:
+                    log_error(f"Error during timeout disconnect: {e}")
+                break
+                
+    except asyncio.CancelledError:
+        log_info("Timeout checker task cancelled")
+    except Exception as e:
+        log_error(f"Error in check_timeout_and_disconnect: {e}")

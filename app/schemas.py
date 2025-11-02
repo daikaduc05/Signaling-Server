@@ -137,6 +137,16 @@ class PeerOfflineNotification(BaseModel):
     peer: "PeerInfo"
 
 
+class PingMessage(BaseModel):
+    type: str = "ping"
+    timestamp: Optional[float] = None
+
+
+class PongMessage(BaseModel):
+    type: str = "pong"
+    timestamp: Optional[float] = None
+
+
 # Fix forward reference
 PeerOnlineNotification.model_rebuild()
 PeerOfflineNotification.model_rebuild()

@@ -1,21 +1,3 @@
-# Giải thích: SMTP vs Google API
-
-### ✅ **SMTP là gì?**
-- **SMTP** = Simple Mail Transfer Protocol
-- Giao thức tiêu chuẩn để **gửi email** qua mạng Internet
-- Giống như "bưu điện" để gửi th
-
-## 🎯 Tại sao chọn SMTP cho OTP?
-
-### ✅ **Ưu điểm SMTP:**
-- ✅ **Đơn giản**: Chỉ cần username + password (App Password)
-- ✅ **Nhanh setup**: 5 phút là xong
-- ✅ **Không cần OAuth**: Không cần redirect, tokens phức tạp
-- ✅ **Phù hợp demo/test**: Gửi email đơn giản, ít quota hạn chế
-- ✅ **Hoạt động với mọi email**: Không chỉ Gmail, mà cả Outlook, Yahoo...
----
-
-## 🔄 Cách code hiện tại hoạt động
 
 ### **Flow hoạt động:**
 
@@ -69,20 +51,6 @@ server.quit()
 
 ## 📊 So sánh SMTP vs Google API
 
-| Tính năng | SMTP (Code hiện tại) | Google Gmail API |
-|-----------|---------------------|-------------------|
-| **Setup** | ✅ 5 phút (App Password) | ❌ 30+ phút (OAuth, credentials) |
-| **Gửi email** | ✅ Có | ✅ Có |
-| **Đọc email** | ❌ Không | ✅ Có |
-| **Quản lý inbox** | ❌ Không | ✅ Có |
-| **Phù hợp demo** | ✅ Rất phù hợp | ❌ Quá phức tạp |
-| **Phù hợp production** | ⚠️ Được (với quota) | ✅ Tốt hơn |
-| **Quota** | 500 emails/ngày | 1 tỷ requests/ngày |
-| **Security** | App Password | OAuth 2.0 |
-
----
-
-## 🎯 Kết luận
 
 **Code hiện tại đã ĐÚNG và PHÙ HỢP cho demo/test!**
 
