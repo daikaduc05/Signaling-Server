@@ -107,6 +107,8 @@ Once the server is running, visit:
 
 - `WS /ws?token=<jwt_token>` - WebSocket endpoint for peer signaling
 
+Xem chi tiết trong phần [WebSocket API Documentation](#websocket-api-documentation) bên dưới.
+
 ## Usage Examples
 
 ### 1. Register and Login
@@ -141,70 +143,298 @@ curl -X POST "http://localhost:8000/organizations/1/allocate_ip" \
   -d '{}'
 ```
 
-### 4. WebSocket Connection
+## WebSocket API Documentation
 
-**Method 1: Using query parameter**
+### Connection
+
+**Endpoint:** `WS /ws/`
+
+**Authentication:** JWT token có thể được gửi qua:
+1. Query parameter: `ws://localhost:8000/ws?token=<jwt_token>`
+2. Authorization header: `Authorization: Bearer <jwt_token>`
+
+**Connection Flow:**
+1. Client kết nối WebSocket với JWT token
+2. Server xác thực token và accept connection
+3. Client gửi registration message (bắt buộc là message đầu tiên)
+4. Server xử lý registration và trả về response
+5. Connection được maintain để nhận notifications
+
+### Message Types
+
+#### 1. Register Message (Client → Server)
+
+**Type:** `register`
+
+**Description:** Message đăng ký agent với signaling server. Đây là message bắt buộc đầu tiên sau khi kết nối.
+
+**Request Format:**
+```json
+{
+  "type": "register",
+  "agent_id": "agent-123",          // Optional: ID của agent
+  "public_ip": "203.0.113.1",        // Required: Public IP từ STUN server
+  "public_port": 50000,              // Required: Public port từ STUN server
+  "relay_ip": "203.0.113.10",        // Optional: Relay IP từ TURN server
+  "relay_port": 50001                 // Optional: Relay port từ TURN server
+}
+```
+
+**Field Descriptions:**
+- `type`: Luôn là `"register"`
+- `agent_id`: (Optional) ID tùy chỉnh của agent. Nếu không có, server sẽ tự generate
+- `public_ip`: (Required) Public IP address của peer từ STUN discovery
+- `public_port`: (Required) Public port của peer từ STUN discovery
+- `relay_ip`: (Optional) Relay IP address từ TURN server nếu sử dụng relay
+- `relay_port`: (Optional) Relay port từ TURN server nếu sử dụng relay
+
+**Example:**
+```json
+{
+  "type": "register",
+  "agent_id": "peer-device-001",
+  "public_ip": "203.0.113.1",
+  "public_port": 50000,
+  "relay_ip": "203.0.113.10",
+  "relay_port": 50001
+}
+```
+
+#### 2. Register Agent Response (Server → Client)
+
+**Type:** `register_agent_response`
+
+**Description:** Response xác nhận registration thành công, bao gồm virtual IP được assign và danh sách peers cùng subnet.
+
+**Response Format:**
+```json
+{
+  "type": "register_agent_response",
+  "status": "registered",
+  "virtual_ip": "10.0.0.5",
+  "connection_id": "550e8400-e29b-41d4-a716-446655440000",
+  "existing_peers": [
+    {
+      "peer_id": "peer-device-002",
+      "user_id": 2,
+      "email": "user2@example.com",
+      "agent_id": "peer-device-002",
+      "public_ip": "203.0.113.2",
+      "public_port": 50000,
+      "relay_ip": "203.0.113.11",
+      "relay_port": 50001,
+      "virtual_ip": "10.0.0.6"
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+- `type`: Luôn là `"register_agent_response"`
+- `status`: Trạng thái registration, thường là `"registered"`
+- `virtual_ip`: Virtual IP được assign cho peer trong organization subnet
+- `connection_id`: Unique connection ID được generate bởi server
+- `existing_peers`: Danh sách các peers hiện đang online **cùng subnet mask** với peer mới
+  - Chỉ include peers có virtual IP cùng subnet
+  - Peers khác subnet không được include
+
+**Peer Object Structure:**
+- `peer_id`: ID của peer (agent_id nếu có, hoặc auto-generated)
+- `user_id`: User ID của peer
+- `email`: Email của user
+- `agent_id`: Agent ID (optional)
+- `public_ip`: Public IP của peer
+- `public_port`: Public port của peer
+- `relay_ip`: Relay IP của peer (optional)
+- `relay_port`: Relay port của peer (optional)
+- `virtual_ip`: Virtual IP của peer trong subnet
+
+**Lưu ý:** Client nên lưu thông tin các peers trong `existing_peers` vào bộ nhớ tạm để sử dụng cho P2P connection sau này.
+
+#### 3. Peer Online Notification (Server → Client)
+
+**Type:** `peer_online`
+
+**Description:** Notification khi có peer mới online cùng subnet. Server chỉ broadcast đến các peers cùng subnet.
+
+**Notification Format:**
+```json
+{
+  "type": "peer_online",
+  "peer": {
+    "peer_id": "peer-device-003",
+    "user_id": 3,
+    "email": "user3@example.com",
+    "agent_id": "peer-device-003",
+    "public_ip": "203.0.113.3",
+    "public_port": 50000,
+    "relay_ip": "203.0.113.12",
+    "relay_port": 50001,
+    "virtual_ip": "10.0.0.7"
+  }
+}
+```
+
+**Field Descriptions:**
+- `type`: Luôn là `"peer_online"`
+- `peer`: Object chứa thông tin peer mới online
+
+**Lưu ý:** 
+- Chỉ peers cùng subnet nhận được notification này
+- Client nên lưu thông tin peer mới vào bộ nhớ tạm
+
+#### 4. Error Messages (Server → Client)
+
+**Error Format:**
+```json
+{
+  "error": "Error message here"
+}
+```
+
+**Common Error Messages:**
+- `"No token provided"` - Không có token trong request
+- `"Invalid token"` - Token không hợp lệ
+- `"First message must be register"` - Message đầu tiên không phải là register
+- `"Invalid JSON"` - JSON format không hợp lệ
+- `"Missing required fields: public_ip, public_port"` - Thiếu required fields
+- `"User not member of any organization"` - User không thuộc organization nào
+- `"No virtual IP allocated for user in any organization"` - User chưa được allocate virtual IP
+- `"Registration failed"` - Lỗi trong quá trình registration
+
+### Connection Flow Example
 
 ```javascript
-const ws = new WebSocket("ws://localhost:8000/ws?token=<your-jwt-token>");
+// 1. Kết nối WebSocket với JWT token
+const ws = new WebSocket("ws://localhost:8000/ws?token=<jwt_token>");
 
-ws.onopen = function () {
-  // Register agent
-  ws.send(
-    JSON.stringify({
-      type: "register",
-      agent_id: "agent-123",
-      public_ip: "1.2.3.4",
-      public_port: 50000,
-      org_id: 1,
-    })
-  );
+ws.onopen = function() {
+  console.log("WebSocket connected");
+  
+  // 2. Gửi registration message (bắt buộc là message đầu tiên)
+  const registerMessage = {
+    type: "register",
+    agent_id: "my-agent-001",
+    public_ip: "203.0.113.1",
+    public_port: 50000,
+    relay_ip: "203.0.113.10",
+    relay_port: 50001
+  };
+  
+  ws.send(JSON.stringify(registerMessage));
 };
 
-ws.onmessage = function (event) {
+ws.onmessage = function(event) {
   const data = JSON.parse(event.data);
-  console.log("Received:", data);
+  
+  // 3. Xử lý registration response
+  if (data.type === "register_agent_response") {
+    console.log("Registered successfully!");
+    console.log("Virtual IP:", data.virtual_ip);
+    console.log("Connection ID:", data.connection_id);
+    console.log("Existing peers:", data.existing_peers);
+    
+    // Lưu thông tin peers vào bộ nhớ tạm
+    storePeersInMemory(data.existing_peers);
+  }
+  
+  // 4. Xử lý peer online notification
+  else if (data.type === "peer_online") {
+    console.log("New peer online:", data.peer);
+    
+    // Lưu peer mới vào bộ nhớ tạm
+    addPeerToMemory(data.peer);
+  }
+  
+  // 5. Xử lý error messages
+  else if (data.error) {
+    console.error("Error:", data.error);
+  }
+};
+
+ws.onerror = function(error) {
+  console.error("WebSocket error:", error);
+};
+
+ws.onclose = function() {
+  console.log("WebSocket disconnected");
 };
 ```
 
-**Method 2: Using Authorization header (if supported by your WebSocket client)**
+### Subnet Filtering
 
-```javascript
-// Note: Not all WebSocket clients support custom headers
-const ws = new WebSocket("ws://localhost:8000/ws", {
-  headers: {
-    Authorization: "Bearer <your-jwt-token>",
-  },
-});
-```
+**Quan trọng:** Server tự động filter peers theo subnet mask:
 
-**Method 3: Using Python websockets library**
+1. **Registration Response**: Chỉ trả về peers có virtual IP cùng subnet với peer mới
+2. **Peer Online Notification**: Chỉ broadcast đến peers cùng subnet
+
+**Ví dụ:**
+- Organization subnet: `10.0.0.0/24`
+- Peer A virtual IP: `10.0.0.5` ✅ (cùng subnet)
+- Peer B virtual IP: `10.0.0.6` ✅ (cùng subnet)
+- Peer C virtual IP: `192.168.1.5` ❌ (khác subnet)
+
+Khi Peer A register:
+- Chỉ nhận Peer B trong `existing_peers`
+- Peer C không được include
+
+Khi Peer B online:
+- Peer A nhận được `peer_online` notification
+- Peer C không nhận được notification
+
+### Keep-Alive & Connection Management
+
+- **Connection Timeout**: Connection sẽ timeout sau một khoảng thời gian không hoạt động
+- **Auto-reconnect**: Client nên implement auto-reconnect logic khi connection bị drop
+- **Error Handling**: Client nên handle tất cả error messages và đóng connection gracefully nếu cần
+
+### Example: Python Client
 
 ```python
 import asyncio
 import websockets
 import json
 
-async def connect_websocket():
-    uri = "ws://localhost:8000/ws?token=<your-jwt-token>"
+async def connect_and_register(token, public_ip, public_port):
+    uri = f"ws://localhost:8000/ws?token={token}"
+    
     async with websockets.connect(uri) as websocket:
-        # Register agent
-        register_message = {
+        # Send registration message
+        register_msg = {
             "type": "register",
-            "agent_id": "agent-123",
-            "public_ip": "1.2.3.4",
-            "public_port": 50000,
-            "org_id": 1
+            "agent_id": "python-agent-001",
+            "public_ip": public_ip,
+            "public_port": public_port,
+            "relay_ip": None,
+            "relay_port": None
         }
-        await websocket.send(json.dumps(register_message))
-
+        await websocket.send(json.dumps(register_msg))
+        
         # Listen for messages
         async for message in websocket:
             data = json.loads(message)
-            print("Received:", data)
+            
+            if data.get("type") == "register_agent_response":
+                print(f"Registered! Virtual IP: {data['virtual_ip']}")
+                print(f"Connection ID: {data['connection_id']}")
+                print(f"Existing peers: {len(data['existing_peers'])}")
+                
+                # Store peers in memory
+                for peer in data['existing_peers']:
+                    print(f"  - Peer: {peer['peer_id']} ({peer['virtual_ip']})")
+            
+            elif data.get("type") == "peer_online":
+                print(f"New peer online: {data['peer']['peer_id']}")
+            
+            elif data.get("error"):
+                print(f"Error: {data['error']}")
 
-# Run the connection
-asyncio.run(connect_websocket())
+# Usage
+asyncio.run(connect_and_register(
+    token="<jwt_token>",
+    public_ip="203.0.113.1",
+    public_port=50000
+))
 ```
 
 ## Testing

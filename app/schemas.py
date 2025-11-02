@@ -78,31 +78,37 @@ class VirtualIPInfo(BaseModel):
 # WebSocket schemas
 class RegisterAgentRequest(BaseModel):
     type: str = "register"
-    agent_id: str
+    agent_id: Optional[str] = None
     public_ip: str
     public_port: int
-    org_id: int
+    relay_ip: Optional[str] = None
+    relay_port: Optional[int] = None
 
 
 class PeerInfo(BaseModel):
+    peer_id: str
     user_id: int
     email: str
-    agent_id: str
+    agent_id: Optional[str] = None
     public_ip: str
     public_port: int
+    relay_ip: Optional[str] = None
+    relay_port: Optional[int] = None
     virtual_ip: str
 
 
 class RegisterAgentResponse(BaseModel):
-    status: str
-    peers: List[PeerInfo]
+    type: str = "register_agent_response"
+    status: str = "registered"
+    virtual_ip: str
+    connection_id: str
+    existing_peers: List[PeerInfo]
 
 
 class PeerOnlineNotification(BaseModel):
     type: str = "peer_online"
-    user_id: int
-    email: str
-    agent_id: str
-    public_ip: str
-    public_port: int
-    virtual_ip: str
+    peer: "PeerInfo"
+
+
+# Fix forward reference
+PeerOnlineNotification.model_rebuild()
