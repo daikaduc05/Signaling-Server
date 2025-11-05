@@ -1,0 +1,17 @@
+signaling-server/
+├── app/
+│   ├── main.py              → entry point của FastAPI app
+│   ├── api/
+│   │   ├── auth.py          → đăng ký & đăng nhập (JWT)
+│   │   ├── organizations.py → quản lý tổ chức (organization)
+│   │   ├── virtual_ip.py    → cấp phát IP ảo cho agent
+│   │   └── signaling_ws.py  → WebSocket signaling (trái tim của P2P)
+│   ├── db.py                → kết nối và khởi tạo database
+│   ├── models.py            → SQLAlchemy models (User, Org, IP, Peer)
+│   ├── schemas.py           → Pydantic schemas cho validation
+│   ├── services.py          → logic xử lý business
+│   └── utils.py             → tiện ích: hash password, JWT verify, v.v.
+├── start_server.py          → script chạy uvicorn
+├── test_server.py           → script test toàn bộ API & WS
+├── requirements.txt         → các dependency
+└── README.md

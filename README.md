@@ -1,290 +1,468 @@
-# MVP Signaling Server
+# Signaling Server API
 
-Một signaling server đơn giản được xây dựng bằng FastAPI để hỗ trợ WebRTC peer-to-peer connections cho MVP Agent.
+FastAPI backend for P2P signaling server with organization management and virtual IP allocation.
 
-## Tính năng
+## Features
 
-- **WebSocket Signaling**: Hỗ trợ đầy đủ WebRTC signaling protocol
-- **FastAPI**: Framework hiện đại, nhanh và dễ sử dụng
-- **CORS Support**: Hỗ trợ cross-origin requests
-- **Real-time Communication**: WebSocket cho signaling real-time
-- **Simple Architecture**: Kiến trúc đơn giản, dễ hiểu và maintain
+- **User Authentication**: JWT-based authentication with registration and login
+- **Organization Management**: Create and join organizations with subnet management
+- **Virtual IP Allocation**: Automatic IP allocation within organization subnets
+- **WebSocket Signaling**: Real-time peer discovery and communication
+- **RESTful API**: Complete REST API for all operations
 
-## Cài đặt
+## Project Structure
 
-### Yêu cầu hệ thống
+```
+signaling-server/
+├── app/
+│   ├── main.py              # FastAPI application entry point
+│   ├── api/                 # API endpoints
+│   │   ├── auth.py          # Authentication endpoints
+│   │   ├── organizations.py # Organization management
+│   │   ├── virtual_ip.py    # Virtual IP management
+│   │   └── signaling_ws.py  # WebSocket signaling
+│   ├── models.py            # SQLAlchemy database models
+│   ├── schemas.py           # Pydantic schemas
+│   ├── services.py          # Business logic
+│   ├── db.py                # Database configuration
+│   └── utils.py             # Utility functions
+├── tests/                   # Test files
+│   └── test_ws.py
+├── requirements.txt         # Python dependencies
+└── README.md
+```
 
-- Python 3.8+
-- pip hoặc conda
+## Installation
 
-### Cài đặt dependencies
+1. **Clone the repository**
+
+   ```bash
+   git clone <repository-url>
+   cd signaling-server
+   ```
+
+2. **Create virtual environment**
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables**
+   Create a `.env` file in the root directory:
+
+   ```env
+   DATABASE_URL=postgresql://user:password@localhost/signaling_db
+   SECRET_KEY=your-secret-key-here
+   ```
+
+5. **Set up database**
+
+   - Install PostgreSQL
+   - Create database: `createdb signaling_db`
+   - The application will automatically create tables on startup
+
+6. **Run the application**
+   ```bash
+   python -m app.main
+   ```
+   Or using uvicorn directly:
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+## API Documentation
+
+Once the server is running, visit:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## API Endpoints
+
+### Authentication
+
+- `POST /register` - Register new user
+- `POST /login` - Login user and get JWT token
+
+### Organizations
+
+- `POST /organizations` - Create organization (requires auth)
+- `GET /organizations` - List user's organizations (requires auth)
+- `POST /organizations/{org_id}/join` - Join organization (requires auth)
+- `GET /organizations/{org_id}/members` - List organization members (requires auth)
+
+### Virtual IP Management
+
+- `POST /organizations/{org_id}/allocate_ip` - Allocate virtual IP (requires auth)
+- `GET /organizations/{org_id}/ips` - List allocated IPs (requires auth)
+
+### WebSocket Signaling
+
+- `WS /ws?token=<jwt_token>` - WebSocket endpoint for peer signaling
+
+Xem chi tiết trong phần [WebSocket API Documentation](#websocket-api-documentation) bên dưới.
+
+## Usage Examples
+
+### 1. Register and Login
 
 ```bash
-pip install -r requirements.txt
+# Register
+curl -X POST "http://localhost:8000/register" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "password123"}'
+
+# Login
+curl -X POST "http://localhost:8000/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "password123"}'
 ```
 
-## Sử dụng
-
-### Chạy server
+### 2. Create Organization
 
 ```bash
-# Chạy với uvicorn (development)
-python main.py
-
-# Hoặc chạy trực tiếp với uvicorn
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+curl -X POST "http://localhost:8000/organizations" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Organization", "subnet": "10.0.0.0/24"}'
 ```
 
-Server sẽ chạy tại: `http://localhost:8000`
+### 3. Allocate Virtual IP
 
-### API Endpoints
-
-#### Health Check
-
-```
-GET /
-```
-
-Trả về thông tin server và số lượng clients đang kết nối.
-
-#### Status
-
-```
-GET /status
+```bash
+curl -X POST "http://localhost:8000/organizations/1/allocate_ip" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
-Trả về trạng thái chi tiết của server.
+## WebSocket API Documentation
 
-#### WebSocket Signaling
+### Connection
 
-```
-WS /ws/{client_id}
-```
+**Endpoint:** `WS /ws/`
 
-Endpoint chính cho WebRTC signaling.
+**Authentication:** JWT token có thể được gửi qua:
+1. Query parameter: `ws://localhost:8000/ws?token=<jwt_token>`
+2. Authorization header: `Authorization: Bearer <jwt_token>`
 
-## Signaling Protocol
+**Connection Flow:**
+1. Client kết nối WebSocket với JWT token
+2. Server xác thực token và accept connection
+3. Client gửi registration message (bắt buộc là message đầu tiên)
+4. Server xử lý registration và trả về response
+5. Connection được maintain để nhận notifications
 
-Server hỗ trợ các loại message sau:
+### Message Types
 
-### 1. Register
+#### 1. Register Message (Client → Server)
 
+**Type:** `register`
+
+**Description:** Message đăng ký agent với signaling server. Đây là message bắt buộc đầu tiên sau khi kết nối.
+
+**Request Format:**
 ```json
 {
   "type": "register",
-  "id": "client-123",
-  "token": "optional-token"
+  "agent_id": "agent-123",          // Optional: ID của agent
+  "public_ip": "203.0.113.1",        // Required: Public IP từ STUN server
+  "public_port": 50000,              // Required: Public port từ STUN server
+  "relay_ip": "203.0.113.10",        // Optional: Relay IP từ TURN server
+  "relay_port": 50001                 // Optional: Relay port từ TURN server
 }
 ```
 
-### 2. Offer
+**Field Descriptions:**
+- `type`: Luôn là `"register"`
+- `agent_id`: (Optional) ID tùy chỉnh của agent. Nếu không có, server sẽ tự generate
+- `public_ip`: (Required) Public IP address của peer từ STUN discovery
+- `public_port`: (Required) Public port của peer từ STUN discovery
+- `relay_ip`: (Optional) Relay IP address từ TURN server nếu sử dụng relay
+- `relay_port`: (Optional) Relay port từ TURN server nếu sử dụng relay
 
+**Example:**
 ```json
 {
-  "type": "offer",
-  "from": "alice",
-  "to": "bob",
-  "sdp": "v=0\r\no=alice..."
+  "type": "register",
+  "agent_id": "peer-device-001",
+  "public_ip": "203.0.113.1",
+  "public_port": 50000,
+  "relay_ip": "203.0.113.10",
+  "relay_port": 50001
 }
 ```
 
-### 3. Answer
+#### 2. Register Agent Response (Server → Client)
 
+**Type:** `register_agent_response`
+
+**Description:** Response xác nhận registration thành công, bao gồm virtual IP được assign và danh sách peers cùng subnet.
+
+**Response Format:**
 ```json
 {
-  "type": "answer",
-  "from": "bob",
-  "to": "alice",
-  "sdp": "v=0\r\no=bob..."
+  "type": "register_agent_response",
+  "status": "registered",
+  "virtual_ip": "10.0.0.5",
+  "connection_id": "550e8400-e29b-41d4-a716-446655440000",
+  "existing_peers": [
+    {
+      "peer_id": "peer-device-002",
+      "user_id": 2,
+      "email": "user2@example.com",
+      "agent_id": "peer-device-002",
+      "public_ip": "203.0.113.2",
+      "public_port": 50000,
+      "relay_ip": "203.0.113.11",
+      "relay_port": 50001,
+      "virtual_ip": "10.0.0.6"
+    }
+  ]
 }
 ```
 
-### 4. ICE Candidate
+**Field Descriptions:**
+- `type`: Luôn là `"register_agent_response"`
+- `status`: Trạng thái registration, thường là `"registered"`
+- `virtual_ip`: Virtual IP được assign cho peer trong organization subnet
+- `connection_id`: Unique connection ID được generate bởi server
+- `existing_peers`: Danh sách các peers hiện đang online **cùng subnet mask** với peer mới
+  - Chỉ include peers có virtual IP cùng subnet
+  - Peers khác subnet không được include
 
+**Peer Object Structure:**
+- `peer_id`: ID của peer (agent_id nếu có, hoặc auto-generated)
+- `user_id`: User ID của peer
+- `email`: Email của user
+- `agent_id`: Agent ID (optional)
+- `public_ip`: Public IP của peer
+- `public_port`: Public port của peer
+- `relay_ip`: Relay IP của peer (optional)
+- `relay_port`: Relay port của peer (optional)
+- `virtual_ip`: Virtual IP của peer trong subnet
+
+**Lưu ý:** Client nên lưu thông tin các peers trong `existing_peers` vào bộ nhớ tạm để sử dụng cho P2P connection sau này.
+
+#### 3. Peer Online Notification (Server → Client)
+
+**Type:** `peer_online`
+
+**Description:** Notification khi có peer mới online cùng subnet. Server chỉ broadcast đến các peers cùng subnet.
+
+**Notification Format:**
 ```json
 {
-  "type": "candidate",
-  "from": "alice",
-  "to": "bob",
-  "candidate": {
-    "candidate": "candidate:1 1 UDP 2113667326 192.168.1.100 54400 typ host",
-    "sdpMid": "0",
-    "sdpMLineIndex": 0
+  "type": "peer_online",
+  "peer": {
+    "peer_id": "peer-device-003",
+    "user_id": 3,
+    "email": "user3@example.com",
+    "agent_id": "peer-device-003",
+    "public_ip": "203.0.113.3",
+    "public_port": 50000,
+    "relay_ip": "203.0.113.12",
+    "relay_port": 50001,
+    "virtual_ip": "10.0.0.7"
   }
 }
 ```
 
-### 5. Bye
+**Field Descriptions:**
+- `type`: Luôn là `"peer_online"`
+- `peer`: Object chứa thông tin peer mới online
 
+**Lưu ý:** 
+- Chỉ peers cùng subnet nhận được notification này
+- Client nên lưu thông tin peer mới vào bộ nhớ tạm
+
+#### 4. Error Messages (Server → Client)
+
+**Error Format:**
 ```json
 {
-  "type": "bye",
-  "from": "alice",
-  "to": "bob"
+  "error": "Error message here"
 }
 ```
 
-## Kết nối với MVP Agent
+**Common Error Messages:**
+- `"No token provided"` - Không có token trong request
+- `"Invalid token"` - Token không hợp lệ
+- `"First message must be register"` - Message đầu tiên không phải là register
+- `"Invalid JSON"` - JSON format không hợp lệ
+- `"Missing required fields: public_ip, public_port"` - Thiếu required fields
+- `"User not member of any organization"` - User không thuộc organization nào
+- `"No virtual IP allocated for user in any organization"` - User chưa được allocate virtual IP
+- `"Registration failed"` - Lỗi trong quá trình registration
 
-### Cấu hình Agent
+### Connection Flow Example
 
-Tạo file `.env` trong thư mục Agent:
+```javascript
+// 1. Kết nối WebSocket với JWT token
+const ws = new WebSocket("ws://localhost:8000/ws?token=<jwt_token>");
 
-```bash
-# Required
-AGENT_ID=your-unique-agent-id
-SIGNALING_URL=ws://localhost:8000/ws/your-unique-agent-id
+ws.onopen = function() {
+  console.log("WebSocket connected");
+  
+  // 2. Gửi registration message (bắt buộc là message đầu tiên)
+  const registerMessage = {
+    type: "register",
+    agent_id: "my-agent-001",
+    public_ip: "203.0.113.1",
+    public_port: 50000,
+    relay_ip: "203.0.113.10",
+    relay_port: 50001
+  };
+  
+  ws.send(JSON.stringify(registerMessage));
+};
 
-# Optional
-MODE=chat
-DATA_CHANNEL_LABEL=mvp
+ws.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  
+  // 3. Xử lý registration response
+  if (data.type === "register_agent_response") {
+    console.log("Registered successfully!");
+    console.log("Virtual IP:", data.virtual_ip);
+    console.log("Connection ID:", data.connection_id);
+    console.log("Existing peers:", data.existing_peers);
+    
+    // Lưu thông tin peers vào bộ nhớ tạm
+    storePeersInMemory(data.existing_peers);
+  }
+  
+  // 4. Xử lý peer online notification
+  else if (data.type === "peer_online") {
+    console.log("New peer online:", data.peer);
+    
+    // Lưu peer mới vào bộ nhớ tạm
+    addPeerToMemory(data.peer);
+  }
+  
+  // 5. Xử lý error messages
+  else if (data.error) {
+    console.error("Error:", data.error);
+  }
+};
+
+ws.onerror = function(error) {
+  console.error("WebSocket error:", error);
+};
+
+ws.onclose = function() {
+  console.log("WebSocket disconnected");
+};
 ```
 
-### Chạy Agent
+### Subnet Filtering
 
-```bash
-# Terminal 1 - Agent A (Answerer)
-cd Agent
-export AGENT_ID=alice
-export SIGNALING_URL=ws://localhost:8000/ws/alice
-export MODE=chat
-python cli.py listen
+**Quan trọng:** Server tự động filter peers theo subnet mask:
 
-# Terminal 2 - Agent B (Offerer)
-cd Agent
-export AGENT_ID=bob
-export SIGNALING_URL=ws://localhost:8000/ws/bob
-export MODE=chat
-python cli.py connect alice
-```
+1. **Registration Response**: Chỉ trả về peers có virtual IP cùng subnet với peer mới
+2. **Peer Online Notification**: Chỉ broadcast đến peers cùng subnet
 
-## Kiến trúc
+**Ví dụ:**
+- Organization subnet: `10.0.0.0/24`
+- Peer A virtual IP: `10.0.0.5` ✅ (cùng subnet)
+- Peer B virtual IP: `10.0.0.6` ✅ (cùng subnet)
+- Peer C virtual IP: `192.168.1.5` ❌ (khác subnet)
 
-```
-┌─────────────────┐    WebSocket     ┌─────────────────┐
-│   Agent A       │◄────────────────►│  Signaling      │
-│                 │   (Control)      │  Server         │
-│  ┌─────────────┐│                  │                 │
-│  │ Signaling   ││                  └─────────────────┘
-│  │ Client      ││
-│  └─────────────┘│
-│                 │
-│  ┌─────────────┐│    WebRTC        ┌─────────────────┐
-│  │ Agent Core  ││◄────────────────►│   Agent B       │
-│  │             ││   (Data)         │                 │
-│  │ ┌─────────┐ ││                  │  ┌─────────────┐│
-│  │ │Transport│ ││                  │  │ Agent Core  ││
-│  │ └─────────┘ ││                  │  │             ││
-│  └─────────────┘│                  │  │ ┌─────────┐ ││
-└─────────────────┘                  │  │ │Transport│ ││
-                                     │  │ └─────────┘ ││
-                                     │  └─────────────┘│
-                                     └─────────────────┘
-```
+Khi Peer A register:
+- Chỉ nhận Peer B trong `existing_peers`
+- Peer C không được include
 
-## Development
+Khi Peer B online:
+- Peer A nhận được `peer_online` notification
+- Peer C không nhận được notification
 
-### Cấu trúc project
+### Keep-Alive & Connection Management
 
-```
-Signaling Server/
-├── main.py              # Main FastAPI application
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
-```
+- **Connection Timeout**: Connection sẽ timeout sau một khoảng thời gian không hoạt động
+- **Auto-reconnect**: Client nên implement auto-reconnect logic khi connection bị drop
+- **Error Handling**: Client nên handle tất cả error messages và đóng connection gracefully nếu cần
 
-### Chạy trong development mode
+### Example: Python Client
 
-```bash
-# Với auto-reload
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Với debug logging
-uvicorn main:app --reload --log-level debug
-```
-
-### Testing
-
-```bash
-# Test WebSocket connection
-python -c "
+```python
 import asyncio
 import websockets
 import json
 
-async def test():
-    uri = 'ws://localhost:8000/ws/test-client'
+async def connect_and_register(token, public_ip, public_port):
+    uri = f"ws://localhost:8000/ws?token={token}"
+    
     async with websockets.connect(uri) as websocket:
-        # Register
-        await websocket.send(json.dumps({
-            'type': 'register',
-            'id': 'test-client'
-        }))
-        response = await websocket.recv()
-        print('Response:', response)
+        # Send registration message
+        register_msg = {
+            "type": "register",
+            "agent_id": "python-agent-001",
+            "public_ip": public_ip,
+            "public_port": public_port,
+            "relay_ip": None,
+            "relay_port": None
+        }
+        await websocket.send(json.dumps(register_msg))
+        
+        # Listen for messages
+        async for message in websocket:
+            data = json.loads(message)
+            
+            if data.get("type") == "register_agent_response":
+                print(f"Registered! Virtual IP: {data['virtual_ip']}")
+                print(f"Connection ID: {data['connection_id']}")
+                print(f"Existing peers: {len(data['existing_peers'])}")
+                
+                # Store peers in memory
+                for peer in data['existing_peers']:
+                    print(f"  - Peer: {peer['peer_id']} ({peer['virtual_ip']})")
+            
+            elif data.get("type") == "peer_online":
+                print(f"New peer online: {data['peer']['peer_id']}")
+            
+            elif data.get("error"):
+                print(f"Error: {data['error']}")
 
-asyncio.run(test())
-"
+# Usage
+asyncio.run(connect_and_register(
+    token="<jwt_token>",
+    public_ip="203.0.113.1",
+    public_port=50000
+))
 ```
 
-## Troubleshooting
+## Testing
 
-### Lỗi thường gặp
-
-1. **Port đã được sử dụng**
-
-   ```bash
-   # Thay đổi port
-   uvicorn main:app --port 8001
-   ```
-
-2. **CORS errors**
-
-   - Server đã cấu hình CORS cho tất cả origins
-   - Kiểm tra firewall settings
-
-3. **WebSocket connection failed**
-   - Kiểm tra URL signaling trong Agent config
-   - Đảm bảo server đang chạy
-
-### Logs
-
-Server sử dụng Python logging. Để xem logs chi tiết:
+Run tests with pytest:
 
 ```bash
-# Chạy với debug level
-uvicorn main:app --log-level debug
+pytest tests/
 ```
 
-## Production Deployment
+## Development
 
-### Docker (Optional)
+### Database Migrations
 
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY main.py .
-
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+The application uses SQLAlchemy with automatic table creation. For production, consider using Alembic for migrations.
 
 ### Environment Variables
 
-```bash
-# Production settings
-export HOST=0.0.0.0
-export PORT=8000
-export LOG_LEVEL=info
-```
+- `DATABASE_URL`: PostgreSQL connection string
+- `SECRET_KEY`: JWT secret key for token signing
+
+### Security Notes
+
+- Change the default SECRET_KEY in production
+- Configure CORS origins properly for production
+- Use HTTPS in production
+- Implement proper rate limiting
 
 ## License
 
-MIT License - Xem file LICENSE để biết thêm chi tiết.
-
-
-
+This project is part of PBL4 - University of Technology.
