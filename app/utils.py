@@ -100,3 +100,17 @@ def log_info(message: str):
 def log_error(message: str):
     """Log error message"""
     logger.error(message)
+
+
+def is_same_subnet(ip1: str, ip2: str, subnet: str) -> bool:
+    """Check if two IPs are in the same subnet"""
+    try:
+        network = ipaddress.IPv4Network(subnet, strict=False)
+        addr1 = ipaddress.IPv4Address(ip1)
+        addr2 = ipaddress.IPv4Address(ip2)
+        
+        # Check if both IPs are in the network
+        return addr1 in network and addr2 in network
+    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError) as e:
+        logger.error(f"Error checking subnet: {e}")
+        return False

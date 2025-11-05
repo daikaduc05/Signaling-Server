@@ -20,7 +20,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
-    """Get current authenticated user"""
+# """get current user from token"""    
     token = credentials.credentials
     payload = verify_token(token)
     user_id = int(payload.get("sub"))
@@ -28,6 +28,12 @@ def get_current_user(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+        )
+    # Check if user is active (đã xác minh Gmail)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is not active. Please verify your email first.",
         )
     return user
 

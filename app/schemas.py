@@ -11,6 +11,8 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    email_verified: bool = False
+    is_active: bool = False
 
     class Config:
         from_attributes = True
@@ -24,6 +26,27 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+# OTP schemas
+class RequestOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class RequestOTPResponse(BaseModel):
+    message: str
+    expires_in: int  # seconds
+
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+    password: str
+
+
+class VerifyOTPResponse(BaseModel):
+    message: str
+    user: UserResponse
 
 
 # Organization schemas
@@ -78,31 +101,53 @@ class VirtualIPInfo(BaseModel):
 # WebSocket schemas
 class RegisterAgentRequest(BaseModel):
     type: str = "register"
-    agent_id: str
+    agent_id: Optional[str] = None
     public_ip: str
     public_port: int
-    org_id: int
+    relay_ip: Optional[str] = None
+    relay_port: Optional[int] = None
 
 
 class PeerInfo(BaseModel):
+    peer_id: str
     user_id: int
     email: str
-    agent_id: str
+    agent_id: Optional[str] = None
     public_ip: str
     public_port: int
+    relay_ip: Optional[str] = None
+    relay_port: Optional[int] = None
     virtual_ip: str
 
 
 class RegisterAgentResponse(BaseModel):
-    status: str
-    peers: List[PeerInfo]
+    type: str = "register_agent_response"
+    status: str = "registered"
+    virtual_ip: str
+    connection_id: str
+    existing_peers: List[PeerInfo]
 
 
 class PeerOnlineNotification(BaseModel):
     type: str = "peer_online"
-    user_id: int
-    email: str
-    agent_id: str
-    public_ip: str
-    public_port: int
-    virtual_ip: str
+    peer: "PeerInfo"
+
+
+class PeerOfflineNotification(BaseModel):
+    type: str = "peer_offline"
+    peer: "PeerInfo"
+
+
+class PingMessage(BaseModel):
+    type: str = "ping"
+    timestamp: Optional[float] = None
+
+
+class PongMessage(BaseModel):
+    type: str = "pong"
+    timestamp: Optional[float] = None
+
+
+# Fix forward reference
+PeerOnlineNotification.model_rebuild()
+PeerOfflineNotification.model_rebuild()
