@@ -110,12 +110,13 @@ def verify_otp_and_register(
     otp_record.verified = True
     db.commit()
     
-    # Create new user with verified email
+    # Create new user with verified email and active status
     hashed_password = get_password_hash(request.password)
     db_user = User(
         email=request.email,
         password=hashed_password,
-        email_verified=True
+        email_verified=True,
+        is_active=True  # User đã xác minh Gmail → cho phép hoạt động
     )
     
     db.add(db_user)
@@ -127,7 +128,8 @@ def verify_otp_and_register(
         user=UserResponse(
             id=db_user.id,
             email=db_user.email,
-            email_verified=db_user.email_verified
+            email_verified=db_user.email_verified,
+            is_active=db_user.is_active
         )
     )
 
@@ -154,6 +156,13 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Check if user is active (đã xác minh Gmail)
+    if not db_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is not active. Please verify your email first.",
         )
 
     # Create access token
