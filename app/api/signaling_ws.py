@@ -16,6 +16,7 @@ from ..models import User, Organization
 from ..schemas import (
     RegisterAgentResponse,
     PeerOnlineNotification,
+    PeerOfflineNotification,
     PeerInfo,
 )
 from ..utils import verify_token, log_info, log_error, is_same_subnet
@@ -27,6 +28,48 @@ router = APIRouter()
 active_connections: Dict[int, List[WebSocket]] = {}
 # Store agent info by connection
 agent_info: Dict[WebSocket, dict] = {}
+
+
+async def cleanup_connection(
+    websocket: WebSocket, *, reason: str = None, notify_peers: bool = True
+):
+    """Remove websocket from caches and optionally notify peers"""
+    if websocket not in agent_info:
+        return
+
+    agent_data = agent_info.get(websocket, {})
+    org_id = agent_data.get("org_id")
+    peer_id = agent_data.get("peer_id")
+    user_id = agent_data.get("user_id")
+    virtual_ip = agent_data.get("virtual_ip")
+    subnet = agent_data.get("subnet")
+
+    if org_id in active_connections and websocket in active_connections[org_id]:
+        active_connections[org_id].remove(websocket)
+        if not active_connections[org_id]:
+            del active_connections[org_id]
+
+    agent_info.pop(websocket, None)
+
+    log_info(
+        f"Cleaned up connection for peer {peer_id} "
+        f"(user_id={user_id}, org_id={org_id})"
+        + (f" due to: {reason}" if reason else "")
+    )
+
+    if notify_peers and org_id is not None and virtual_ip:
+        notification = PeerOfflineNotification(
+            peer_id=peer_id or "unknown",
+            user_id=user_id or -1,
+            virtual_ip=virtual_ip,
+        )
+        await broadcast_to_org(
+            org_id,
+            notification.dict(),
+            exclude_ws=websocket,
+            subnet=subnet,
+            virtual_ip=virtual_ip,
+        )
 
 
 def get_user_from_token(token: str, db: Session) -> User:
@@ -56,7 +99,7 @@ async def broadcast_to_org(
     """Broadcast message to all connections in an organization with same subnet"""
     if org_id in active_connections:
         sent_count = 0
-        for connection in active_connections[org_id]:
+        for connection in list(active_connections[org_id]):
             if connection != exclude_ws and connection in agent_info:
                 # Filter by subnet if provided
                 if subnet and virtual_ip:
@@ -70,6 +113,11 @@ async def broadcast_to_org(
                     sent_count += 1
                 except Exception as e:
                     log_error(f"Error broadcasting to connection: {e}")
+                    await cleanup_connection(
+                        connection,
+                        reason="broadcast failure",
+                        notify_peers=True,
+                    )
         return sent_count
     return 0
 
@@ -288,19 +336,8 @@ async def handle_disconnect(websocket: WebSocket, user: User):
     try:
         if websocket in agent_info:
             agent_data = agent_info[websocket]
-            org_id = agent_data["org_id"]
-
-            # Remove from active connections
-            if org_id in active_connections:
-                if websocket in active_connections[org_id]:
-                    active_connections[org_id].remove(websocket)
-                if not active_connections[org_id]:
-                    del active_connections[org_id]
-
-            # Remove agent info
-            del agent_info[websocket]
-
+            org_id = agent_data.get("org_id")
+            await cleanup_connection(websocket, reason="client disconnect")
             log_info(f"Agent disconnected for user {user.email} in org {org_id}")
-
     except Exception as e:
         log_error(f"Error in handle_disconnect: {e}")

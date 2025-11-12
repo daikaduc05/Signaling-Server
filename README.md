@@ -7,7 +7,7 @@ FastAPI backend for P2P signaling server with organization management and virtua
 - **User Authentication**: JWT-based authentication with registration and login
 - **Organization Management**: Create and join organizations with subnet management
 - **Virtual IP Allocation**: Automatic IP allocation within organization subnets
-- **WebSocket Signaling**: Real-time peer discovery and communication
+- **WebSocket Signaling**: Real-time peer discovery, lifecycle notifications, and communication
 - **RESTful API**: Complete REST API for all operations
 
 ## Project Structure
@@ -283,7 +283,34 @@ curl -X POST "http://localhost:8000/organizations/1/allocate_ip" \
 - Chỉ peers cùng subnet nhận được notification này
 - Client nên lưu thông tin peer mới vào bộ nhớ tạm
 
-#### 4. Error Messages (Server → Client)
+#### 4. Peer Offline Notification (Server → Client)
+
+**Type:** `peer_offline`
+
+**Description:** Notification khi một peer cùng subnet rời khỏi signaling server. Server tự động broadcast khi client chủ động disconnect hoặc bị drop khỏi cache (ví dụ: lỗi gửi message).
+
+**Notification Format:**
+```json
+{
+  "type": "peer_offline",
+  "peer_id": "peer-device-003",
+  "user_id": 3,
+  "virtual_ip": "10.0.0.7"
+}
+```
+
+**Field Descriptions:**
+- `type`: Luôn là `"peer_offline"`
+- `peer_id`: ID của peer vừa offline (có thể được generate tự động)
+- `user_id`: User ID tương ứng
+- `virtual_ip`: Virtual IP của peer trong subnet
+
+**Lưu ý:**
+- Notification chỉ gửi đến peers **cùng subnet**
+- Client nên xóa peer khỏi bộ nhớ tạm và dừng tất cả kết nối P2P liên quan
+- Nếu server phát hiện peer không còn nhận message (ví dụ lỗi gửi), notification vẫn được gửi cho các peers còn lại
+
+#### 5. Error Messages (Server → Client)
 
 **Error Format:**
 ```json
@@ -387,6 +414,7 @@ Khi Peer B online:
 - **Connection Timeout**: Connection sẽ timeout sau một khoảng thời gian không hoạt động
 - **Auto-reconnect**: Client nên implement auto-reconnect logic khi connection bị drop
 - **Error Handling**: Client nên handle tất cả error messages và đóng connection gracefully nếu cần
+- **Offline Cleanup**: Server tự động cleanup peers offline khỏi cache và broadcast `peer_offline` để các clients đồng bộ trạng thái
 
 ### Example: Python Client
 
