@@ -207,14 +207,17 @@ async def send_to_client(client_id: str, message: dict):
 
 async def cleanup_client(client_id: str):
     """Clean up client connection and remove from rooms"""
-    if client_id in connected_clients:
-        del connected_clients[client_id]
+    connected_clients.pop(client_id, None)
 
-    # Remove from all rooms
+    rooms_to_remove = []
     for room_id, clients in client_rooms.items():
-        clients.discard(client_id)
+        if client_id in clients:
+            clients.discard(client_id)
         if not clients:
-            del client_rooms[room_id]
+            rooms_to_remove.append(room_id)
+
+    for room_id in rooms_to_remove:
+        del client_rooms[room_id]
 
     logger.info(
         f"Cleaned up client {client_id}. Remaining clients: {len(connected_clients)}"
